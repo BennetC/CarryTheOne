@@ -30,7 +30,7 @@ Then open `http://127.0.0.1:5000`.
 ## Participant flow
 1. Visit `/` and consent.
 2. Enter a participant code OR click generate anonymous code.
-3. Complete problems at `/task` and view immediate results at `/feedback`.
+3. Complete problems at `/task` by typing answers; correct answers auto-submit and load the next problem immediately.
 
 Optional problem controls via query params on `/task`:
 - `difficulty=easy|medium|hard`
@@ -66,3 +66,4 @@ A trial is flagged (`is_suspicious = true`) if any condition is true:
 ## Notes
 - Multiplication uses a clear `×` symbol in display text, but all server-side values are numeric.
 - Reloading `/task` creates a brand-new trial (new `id`), preventing accidental timing restarts on a reused trial.
+- Task mode is optimized for uninterrupted data collection: incorrect answers are not submitted; only correct answers auto-submit and advance.

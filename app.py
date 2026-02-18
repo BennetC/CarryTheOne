@@ -1,10 +1,10 @@
 import csv
 import io
 import os
-import uuid
-from datetime import datetime, timezone
-from statistics import mean, median
 import random
+import uuid
+from datetime import datetime
+from statistics import mean, median
 
 from flask import (
     Flask,
@@ -28,12 +28,16 @@ app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 db = SQLAlchemy(app)
 
 
+def utcnow_naive() -> datetime:
+    return datetime.utcnow()
+
+
 class Participant(db.Model):
     __tablename__ = "participants"
 
     id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     code = db.Column(db.String(64), unique=True, nullable=False, index=True)
-    created_at = db.Column(db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
+    created_at = db.Column(db.DateTime, nullable=False, default=utcnow_naive)
     user_agent = db.Column(db.String(512), nullable=True)
     device_hint = db.Column(db.String(128), nullable=True)
 
@@ -56,7 +60,7 @@ class Trial(db.Model):
     rt_ms = db.Column(db.Integer, nullable=True)
     server_duration_ms = db.Column(db.Integer, nullable=True)
 
-    started_at = db.Column(db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
+    started_at = db.Column(db.DateTime, nullable=False, default=utcnow_naive)
     submitted_at = db.Column(db.DateTime, nullable=True)
 
     client_start_ts = db.Column(db.BigInteger, nullable=True)
@@ -210,9 +214,16 @@ def get_current_participant():
 
 
 def require_admin():
-    if not session.get("admin_authed"):
-        return False
-    return True
+    return bool(session.get("admin_authed"))
+
+
+def parse_iso_naive(value: str):
+    if not value:
+        return None
+    parsed = datetime.fromisoformat(value)
+    if parsed.tzinfo is not None:
+        parsed = parsed.astimezone().replace(tzinfo=None)
+    return parsed
 
 
 @app.route("/", methods=["GET", "POST"])
@@ -257,8 +268,7 @@ def task():
         visibility_events = request.form.get("visibility_events", type=int)
         input_method = (request.form.get("input_method") or "keyboard").strip()[:32]
 
-        now = datetime.now(timezone.utc)
-        trial.submitted_at = now
+        trial.submitted_at = utcnow_naive()
         trial.user_answer = user_answer
         trial.rt_ms = rt_ms
         trial.client_start_ts = client_start_ts
@@ -272,18 +282,23 @@ def task():
         except ValueError:
             trial.is_correct = False
 
-        trial.server_duration_ms = int((trial.submitted_at - trial.started_at).total_seconds() * 1000)
+        if trial.started_at is not None and trial.submitted_at is not None:
+            trial.server_duration_ms = int((trial.submitted_at - trial.started_at).total_seconds() * 1000)
+        else:
+            trial.server_duration_ms = None
 
         suspicious = False
         if rt_ms is None or rt_ms < 250 or rt_ms > 60000:
             suspicious = True
-        if rt_ms is not None and abs(rt_ms - trial.server_duration_ms) > 2000:
+        if rt_ms is not None and trial.server_duration_ms is not None and abs(rt_ms - trial.server_duration_ms) > 2000:
             suspicious = True
         trial.is_suspicious = suspicious
 
         db.session.commit()
         session["last_trial_id"] = trial.id
-        return redirect(url_for("feedback"))
+
+        # Auto-advance flow: successful submissions go straight to the next problem.
+        return redirect(url_for("task"))
 
     difficulty = (request.args.get("difficulty") or "medium").lower()
     ops_param = (request.args.get("ops") or "add,sub,mul").lower().split(",")
@@ -292,7 +307,7 @@ def task():
 
     trial = Trial(
         participant_id=participant.id,
-        started_at=datetime.now(timezone.utc),
+        started_at=utcnow_naive(),
         **problem,
     )
     db.session.add(trial)
@@ -343,13 +358,16 @@ def admin():
     start_date = request.args.get("start_date", "")
     end_date = request.args.get("end_date", "")
 
+    start_dt = parse_iso_naive(start_date)
+    end_dt = parse_iso_naive(end_date)
+
     trials_query = Trial.query.filter(Trial.submitted_at.isnot(None))
     if op_type:
         trials_query = trials_query.filter_by(op_type=op_type)
-    if start_date:
-        trials_query = trials_query.filter(Trial.submitted_at >= datetime.fromisoformat(start_date))
-    if end_date:
-        trials_query = trials_query.filter(Trial.submitted_at <= datetime.fromisoformat(end_date))
+    if start_dt:
+        trials_query = trials_query.filter(Trial.submitted_at >= start_dt)
+    if end_dt:
+        trials_query = trials_query.filter(Trial.submitted_at <= end_dt)
 
     trials = trials_query.all()
     rt_values = [t.rt_ms for t in trials if t.rt_ms is not None]
@@ -390,13 +408,16 @@ def export_csv():
     start_date = request.args.get("start_date", "")
     end_date = request.args.get("end_date", "")
 
+    start_dt = parse_iso_naive(start_date)
+    end_dt = parse_iso_naive(end_date)
+
     trials_query = Trial.query
     if op_type:
         trials_query = trials_query.filter_by(op_type=op_type)
-    if start_date:
-        trials_query = trials_query.filter(Trial.submitted_at >= datetime.fromisoformat(start_date))
-    if end_date:
-        trials_query = trials_query.filter(Trial.submitted_at <= datetime.fromisoformat(end_date))
+    if start_dt:
+        trials_query = trials_query.filter(Trial.submitted_at >= start_dt)
+    if end_dt:
+        trials_query = trials_query.filter(Trial.submitted_at <= end_dt)
 
     output = io.StringIO()
     writer = csv.writer(output)
