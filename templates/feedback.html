@@ -1,0 +1,13 @@
+{% extends 'base.html' %}
+{% block title %}Feedback | RT Arithmetic Trainer{% endblock %}
+{% block content %}
+<section class="card">
+  <h2>{{ 'Correct' if trial.is_correct else 'Incorrect' }}</h2>
+  <p><strong>Problem:</strong> {{ trial.expression_text }}</p>
+  <p><strong>Your answer:</strong> {{ trial.user_answer or 'blank' }}</p>
+  <p><strong>Correct answer:</strong> {{ trial.correct_answer }}</p>
+  <p><strong>Measured RT:</strong> {{ trial.rt_ms }} ms</p>
+  {% if trial.is_suspicious %}<p class="warning">This trial was flagged as suspicious timing.</p>{% endif %}
+  <a class="button" href="{{ url_for('task') }}">Next problem</a>
+</section>
+{% endblock %}

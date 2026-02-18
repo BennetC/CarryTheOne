@@ -1,0 +1,47 @@
+{% extends 'base.html' %}
+{% block title %}Admin | RT Arithmetic Trainer{% endblock %}
+{% block content %}
+<section class="card">
+  <h2>Admin Dashboard</h2>
+
+  {% if show_login %}
+  <form method="post">
+    <label for="admin_password">Admin password</label>
+    <input id="admin_password" name="admin_password" type="password" required>
+    <button type="submit">Login</button>
+  </form>
+  {% else %}
+  <form method="get" class="inline-form">
+    <label for="op_type">Operation</label>
+    <select id="op_type" name="op_type">
+      <option value="" {% if not op_type %}selected{% endif %}>All</option>
+      <option value="add" {% if op_type == 'add' %}selected{% endif %}>Add</option>
+      <option value="sub" {% if op_type == 'sub' %}selected{% endif %}>Sub</option>
+      <option value="mul" {% if op_type == 'mul' %}selected{% endif %}>Mul</option>
+    </select>
+    <label for="start_date">Start (ISO datetime)</label>
+    <input id="start_date" name="start_date" value="{{ start_date }}" placeholder="2026-01-01T00:00:00">
+    <label for="end_date">End (ISO datetime)</label>
+    <input id="end_date" name="end_date" value="{{ end_date }}" placeholder="2026-12-31T23:59:59">
+    <button type="submit">Apply Filters</button>
+  </form>
+
+  <ul>
+    <li>Total participants: {{ stats.participants }}</li>
+    <li>Total trials: {{ stats.trials }}</li>
+    <li>Accuracy: {{ stats.accuracy }}%</li>
+    <li>Mean RT: {{ stats.mean_rt if stats.mean_rt is not none else 'N/A' }} ms</li>
+    <li>Median RT: {{ stats.median_rt if stats.median_rt is not none else 'N/A' }} ms</li>
+  </ul>
+
+  <h3>Trial counts by operation</h3>
+  <ul>
+    {% for op, count in op_counts %}<li>{{ op }}: {{ count }}</li>{% endfor %}
+  </ul>
+
+  <p>
+    <a class="button" href="{{ url_for('export_csv', op_type=op_type, start_date=start_date, end_date=end_date) }}">Download CSV export</a>
+  </p>
+  {% endif %}
+</section>
+{% endblock %}

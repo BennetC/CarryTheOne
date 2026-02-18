@@ -1,0 +1,24 @@
+{% extends 'base.html' %}
+{% block title %}Task | RT Arithmetic Trainer{% endblock %}
+{% block content %}
+<section class="card">
+  <p class="muted">Type the answer. When correct, you'll automatically continue.</p>
+  <div id="expression" class="expression" data-trial-id="{{ trial.id }}">{{ trial.expression_text }}</div>
+
+  <form id="task-form" method="post" novalidate data-correct-answer="{{ trial.correct_answer }}">
+    <input type="hidden" name="trial_id" value="{{ trial.id }}">
+    <input type="hidden" name="client_start_ts" id="client_start_ts">
+    <input type="hidden" name="client_submit_ts" id="client_submit_ts">
+    <input type="hidden" name="rt_ms" id="rt_ms">
+    <input type="hidden" name="visibility_events" id="visibility_events" value="0">
+    <input type="hidden" name="input_method" id="input_method" value="keyboard">
+
+    <label for="user_answer">Answer</label>
+    <input id="user_answer" name="user_answer" type="text" inputmode="numeric" autocomplete="off" autofocus required>
+    <p id="status-text" class="muted">Waiting for correct answer…</p>
+    <button id="submit-btn" type="submit" hidden aria-hidden="true">Submit</button>
+  </form>
+  <p class="muted">Difficulty: {{ difficulty }} | Ops: {{ ops }}</p>
+</section>
+<script src="{{ url_for('static', filename='task.js') }}"></script>
+{% endblock %}

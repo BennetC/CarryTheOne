@@ -1,0 +1,21 @@
+{% extends 'base.html' %}
+{% block title %}Start | RT Arithmetic Trainer{% endblock %}
+{% block content %}
+<section class="card">
+  <p>This demo collects arithmetic solve times and correctness for research/training purposes.</p>
+  <form method="post">
+    <label class="checkbox-row">
+      <input type="checkbox" name="consent" value="yes" required>
+      I agree to participate.
+    </label>
+
+    <label for="code">Participant nickname/code</label>
+    <input id="code" name="code" type="text" maxlength="64" value="{{ existing_code or '' }}" placeholder="e.g., p01 or leave blank">
+
+    <div class="button-row">
+      <button type="submit" name="start" value="1">Start with this code</button>
+      <button type="submit" name="generate" value="1" class="secondary">Generate anonymous code</button>
+    </div>
+  </form>
+</section>
+{% endblock %}
