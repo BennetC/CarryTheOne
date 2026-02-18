@@ -1,0 +1,23 @@
+{% extends 'base.html' %}
+{% block title %}Task | RT Arithmetic Trainer{% endblock %}
+{% block content %}
+<section class="card">
+  <p class="muted">Solve as quickly and accurately as you can.</p>
+  <div id="expression" class="expression" data-trial-id="{{ trial.id }}">{{ trial.expression_text }}</div>
+
+  <form id="task-form" method="post" novalidate>
+    <input type="hidden" name="trial_id" value="{{ trial.id }}">
+    <input type="hidden" name="client_start_ts" id="client_start_ts">
+    <input type="hidden" name="client_submit_ts" id="client_submit_ts">
+    <input type="hidden" name="rt_ms" id="rt_ms">
+    <input type="hidden" name="visibility_events" id="visibility_events" value="0">
+    <input type="hidden" name="input_method" id="input_method" value="keyboard">
+
+    <label for="user_answer">Answer</label>
+    <input id="user_answer" name="user_answer" type="text" inputmode="numeric" autocomplete="off" autofocus required>
+    <button id="submit-btn" type="submit" disabled>Submit</button>
+  </form>
+  <p class="muted">Difficulty: {{ difficulty }} | Ops: {{ ops }}</p>
+</section>
+<script src="{{ url_for('static', filename='task.js') }}"></script>
+{% endblock %}
