@@ -1,0 +1,52 @@
+{% extends 'base.html' %}
+{% block title %}Participant | Admin{% endblock %}
+{% block content %}
+<section class="card">
+  <h2>Participant details</h2>
+  <p><strong>Code:</strong> {{ participant.code }}</p>
+  <p><strong>ID:</strong> {{ participant.id }}</p>
+  <p><strong>Created:</strong> {{ participant.created_at }}</p>
+  <p><strong>Age:</strong> {{ participant.age if participant.age is not none else 'N/A' }}</p>
+  <p><strong>Gender:</strong> {{ participant.gender or 'N/A' }}</p>
+  <p><strong>Dominant hand:</strong> {{ participant.dominant_hand or 'N/A' }}</p>
+  <p><strong>Math confidence:</strong> {{ participant.math_confidence if participant.math_confidence is not none else 'N/A' }}</p>
+
+  <form method="post" action="{{ url_for('delete_participant_admin', participant_id=participant.id) }}" onsubmit="return confirm('Delete this participant and all of their trials?');">
+    <button type="submit">Delete this participant</button>
+  </form>
+
+  <h3>Trials for this participant</h3>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Started</th>
+          <th>Submitted</th>
+          <th>Expression</th>
+          <th>Answer</th>
+          <th>RT (ms)</th>
+          <th>Correct</th>
+          <th>Action</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for t in trials %}
+        <tr>
+          <td>{{ t.started_at }}</td>
+          <td>{{ t.submitted_at or '—' }}</td>
+          <td>{{ t.expression_text }}</td>
+          <td>{{ t.user_answer or '—' }}</td>
+          <td>{{ t.rt_ms or '—' }}</td>
+          <td>{{ t.is_correct if t.is_correct is not none else '—' }}</td>
+          <td>
+            <form method="post" action="{{ url_for('delete_trial_admin', trial_id=t.id) }}" onsubmit="return confirm('Delete this trial?');">
+              <button type="submit" class="secondary">Delete trial</button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}

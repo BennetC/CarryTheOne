@@ -20,7 +20,8 @@
   </form>
   <p class="muted">Scale strategy: {{ scale_meta.strategy }} | Ops: {{ ops }}</p>
 
-  <form method="post" action="{{ url_for('stop') }}">
+  <form id="stop-form" method="post" action="{{ url_for('stop') }}">
+    <input type="hidden" name="trial_id" value="{{ trial.id }}">
     <button type="submit" class="secondary">Stop session</button>
   </form>
 

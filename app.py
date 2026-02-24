@@ -4,6 +4,7 @@ import os
 import random
 import uuid
 from datetime import datetime
+from datetime import timedelta
 from statistics import mean, median
 
 from flask import (
@@ -26,6 +27,7 @@ app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///rt_training.db"
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 
 db = SQLAlchemy(app)
+SESSION_TIMEOUT = timedelta(minutes=5)
 
 
 def utcnow_naive() -> datetime:
@@ -384,6 +386,17 @@ def require_admin():
     return bool(session.get("admin_authed"))
 
 
+def is_trial_timed_out(trial: Trial) -> bool:
+    if not trial or trial.submitted_at is not None or trial.started_at is None:
+        return False
+    return utcnow_naive() - trial.started_at > SESSION_TIMEOUT
+
+
+def delete_trial(trial: Trial):
+    db.session.delete(trial)
+    db.session.commit()
+
+
 def parse_iso_naive(value: str):
     if not value:
         return None
@@ -461,6 +474,13 @@ def task():
             flash("Trial not found or already submitted. Please try a new problem.")
             return redirect(url_for("task"))
 
+        if is_trial_timed_out(trial):
+            delete_trial(trial)
+            session.pop("participant_id", None)
+            session.pop("last_trial_id", None)
+            flash("Session ended due to 5 minutes of inactivity. The idle trial was not saved.")
+            return redirect(url_for("index"))
+
         user_answer = (request.form.get("user_answer") or "").strip()
         rt_ms = request.form.get("rt_ms", type=int)
         client_start_ts = request.form.get("client_start_ts", type=int)
@@ -531,6 +551,13 @@ def task():
 
 @app.route("/stop", methods=["POST"])
 def stop():
+    trial_id = request.form.get("trial_id", "")
+    participant = get_current_participant()
+    if participant and trial_id:
+        trial = Trial.query.filter_by(id=trial_id, participant_id=participant.id, submitted_at=None).first()
+        if trial:
+            delete_trial(trial)
+
     session.pop("participant_id", None)
     session.pop("last_trial_id", None)
     flash("Session ended. Your solved questions were saved as you completed them.")
@@ -572,6 +599,8 @@ def admin():
     op_type = request.args.get("op_type", "")
     start_date = request.args.get("start_date", "")
     end_date = request.args.get("end_date", "")
+    participant_code = (request.args.get("participant_code") or "").strip()
+    participant_id = (request.args.get("participant_id") or "").strip()
 
     start_dt = parse_iso_naive(start_date)
     end_dt = parse_iso_naive(end_date)
@@ -579,6 +608,14 @@ def admin():
     trials_query = Trial.query.filter(Trial.submitted_at.isnot(None))
     if op_type:
         trials_query = trials_query.filter_by(op_type=op_type)
+    if participant_id:
+        trials_query = trials_query.filter_by(participant_id=participant_id)
+    elif participant_code:
+        participant = Participant.query.filter_by(code=participant_code).first()
+        if participant:
+            trials_query = trials_query.filter_by(participant_id=participant.id)
+        else:
+            trials_query = trials_query.filter(db.text("1=0"))
     if start_dt:
         trials_query = trials_query.filter(Trial.submitted_at >= start_dt)
     if end_dt:
@@ -603,6 +640,13 @@ def admin():
         .all()
     )
 
+    participants = (
+        Participant.query.order_by(Participant.created_at.desc())
+        .limit(25)
+        .all()
+    )
+    recent_trials = trials_query.order_by(Trial.submitted_at.desc()).limit(25).all()
+
     return render_template(
         "admin.html",
         show_login=False,
@@ -611,7 +655,58 @@ def admin():
         op_type=op_type,
         start_date=start_date,
         end_date=end_date,
+        participant_code=participant_code,
+        participant_id=participant_id,
+        participants=participants,
+        recent_trials=recent_trials,
     )
+
+
+@app.route("/admin/participant/<participant_id>")
+def admin_participant(participant_id: str):
+    if not require_admin():
+        return redirect(url_for("admin"))
+
+    participant = Participant.query.filter_by(id=participant_id).first_or_404()
+    trials = (
+        Trial.query.filter_by(participant_id=participant.id)
+        .order_by(Trial.started_at.desc())
+        .all()
+    )
+    return render_template("admin_participant.html", participant=participant, trials=trials)
+
+
+@app.route("/admin/delete/participant/<participant_id>", methods=["POST"])
+def delete_participant_admin(participant_id: str):
+    if not require_admin():
+        return redirect(url_for("admin"))
+
+    participant = Participant.query.filter_by(id=participant_id).first()
+    if not participant:
+        flash("Participant not found.")
+        return redirect(url_for("admin"))
+
+    Trial.query.filter_by(participant_id=participant.id).delete(synchronize_session=False)
+    db.session.delete(participant)
+    db.session.commit()
+    flash("Participant and all related trials were deleted.")
+    return redirect(url_for("admin"))
+
+
+@app.route("/admin/delete/trial/<trial_id>", methods=["POST"])
+def delete_trial_admin(trial_id: str):
+    if not require_admin():
+        return redirect(url_for("admin"))
+
+    trial = Trial.query.filter_by(id=trial_id).first()
+    if not trial:
+        flash("Trial not found.")
+        return redirect(url_for("admin"))
+
+    db.session.delete(trial)
+    db.session.commit()
+    flash("Trial deleted.")
+    return redirect(request.referrer or url_for("admin"))
 
 
 @app.route("/admin/export.csv")
@@ -622,6 +717,8 @@ def export_csv():
     op_type = request.args.get("op_type", "")
     start_date = request.args.get("start_date", "")
     end_date = request.args.get("end_date", "")
+    participant_code = (request.args.get("participant_code") or "").strip()
+    participant_id = (request.args.get("participant_id") or "").strip()
 
     start_dt = parse_iso_naive(start_date)
     end_dt = parse_iso_naive(end_date)
@@ -629,6 +726,14 @@ def export_csv():
     trials_query = Trial.query
     if op_type:
         trials_query = trials_query.filter_by(op_type=op_type)
+    if participant_id:
+        trials_query = trials_query.filter_by(participant_id=participant_id)
+    elif participant_code:
+        participant = Participant.query.filter_by(code=participant_code).first()
+        if participant:
+            trials_query = trials_query.filter_by(participant_id=participant.id)
+        else:
+            trials_query = trials_query.filter(db.text("1=0"))
     if start_dt:
         trials_query = trials_query.filter(Trial.submitted_at >= start_dt)
     if end_dt:

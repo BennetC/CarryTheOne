@@ -7,6 +7,7 @@ A minimal Flask web app for collecting arithmetic response-time data with per-tr
 - One-problem-per-page task flow with client-side response timing.
 - Trial integrity checks and suspicious-trial flagging.
 - Admin dashboard with summary statistics and CSV export.
+- Admin tools to inspect/delete individual users and individual trials directly in the web UI.
 - SQLite via SQLAlchemy; database is created automatically on first run.
 
 ## Requirements
@@ -33,10 +34,12 @@ Then open `http://127.0.0.1:5000`.
 3. Optionally add participant metadata (age, gender, dominant hand, math confidence).
 4. Complete problems at `/task` by typing answers; correct answers auto-submit and load the next problem immediately.
 5. Use **Stop session** at any time to end the current run and return to start.
+6. If no activity occurs for 5 minutes, the session auto-stops and the idle trial is discarded.
 
 Data saving behavior:
 - Trials are saved live: each correct submission is committed immediately when posted.
 - Stopping a session does not delete already submitted trials.
+- Inactivity timeout does not add the timed-out idle entry/time to saved statistical data.
 
 Optional problem controls via query params on `/task`:
 - `ops=add,sub,mul`
@@ -58,8 +61,9 @@ Adaptive scaling notes:
 ## Admin dashboard
 - Visit `/admin` and log in with `ADMIN_PASSWORD`.
 - View total participants, total trials, accuracy %, mean/median RT.
-- Optional filters: operation and start/end ISO datetime.
+- Optional filters: operation, start/end ISO datetime, participant code, and participant id.
 - Export CSV at `/admin/export.csv` (with the same query parameters if filtering).
+- Review individual participant pages and delete a specific participant (with all their trials) or delete individual trials.
 
 ## CSV columns
 `/admin/export.csv` includes:
