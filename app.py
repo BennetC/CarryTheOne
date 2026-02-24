@@ -194,6 +194,22 @@ def clamp(value: float, minimum: float, maximum: float) -> float:
     return max(minimum, min(value, maximum))
 
 
+def progression_cap(solved_count: int) -> float:
+    if solved_count <= 2:
+        return 1.6
+    if solved_count <= 5:
+        return 2.1
+    if solved_count <= 10:
+        return 2.8
+    if solved_count <= 20:
+        return 3.8
+    if solved_count <= 35:
+        return 5.0
+    if solved_count <= 50:
+        return 6.2
+    return 7.2
+
+
 def infer_scaling_factor(participant_id: str, strategy: str):
     completed_trials = (
         Trial.query.filter_by(participant_id=participant_id)
@@ -203,16 +219,16 @@ def infer_scaling_factor(participant_id: str, strategy: str):
     )
     solved_count = len(completed_trials)
 
-    recent = completed_trials[-8:]
+    recent = completed_trials[-10:]
     accuracy = (sum(1 for t in recent if t.is_correct) / len(recent)) if recent else 1.0
 
     recent_rt_values = [t.rt_ms for t in recent if t.rt_ms is not None]
-    avg_recent_rt = mean(recent_rt_values) if recent_rt_values else 4500
-    speed_ratio = clamp(4500 / max(avg_recent_rt, 600), 0.0, 1.4)
+    avg_recent_rt = mean(recent_rt_values) if recent_rt_values else 5500
+    speed_ratio = clamp(4000 / max(avg_recent_rt, 800), 0.0, 1.2)
 
-    timeout_penalty = sum(1 for t in recent if t.rt_ms is not None and t.rt_ms > 12000) * 0.08
-    incorrect_penalty = sum(1 for t in recent if not t.is_correct) * 0.1
-    streak_bonus = 0.15 if recent and all(t.is_correct for t in recent[-3:]) else 0.0
+    timeout_penalty = sum(1 for t in recent if t.rt_ms is not None and t.rt_ms > 12000) * 0.06
+    incorrect_penalty = sum(1 for t in recent if not t.is_correct) * 0.08
+    streak_bonus = 0.1 if recent and all(t.is_correct for t in recent[-3:]) else 0.0
 
     strategy_key = (strategy or "dynamic").lower()
     used_strategy = strategy_key
@@ -220,24 +236,25 @@ def infer_scaling_factor(participant_id: str, strategy: str):
         used_strategy = random.choice(["polynomial", "exponential", "dynamic"])
 
     if used_strategy == "polynomial":
-        scaling_factor = 1 + (solved_count / 5) ** 2
+        scaling_factor = 1 + (solved_count / 10) ** 1.4
     elif used_strategy == "exponential":
-        scaling_factor = 1.05**solved_count
+        scaling_factor = 1.03**solved_count
     else:
-        base_factor = 1 + (solved_count / 6) ** 1.7
+        base_factor = 1 + (solved_count / 12) ** 1.35
         dynamic_multiplier = clamp(
-            0.7 + (accuracy * 0.9) + (speed_ratio * 0.6) + streak_bonus - timeout_penalty - incorrect_penalty,
-            0.2,
-            2.0,
+            0.75 + (accuracy * 0.45) + (speed_ratio * 0.35) + streak_bonus - timeout_penalty - incorrect_penalty,
+            0.5,
+            1.5,
         )
         scaling_factor = base_factor * dynamic_multiplier
 
+    capped_factor = clamp(scaling_factor, 1.0, progression_cap(solved_count))
     return {
         "solved_count": solved_count,
         "accuracy_recent": round(accuracy, 3),
         "avg_recent_rt": round(avg_recent_rt, 2),
         "speed_ratio": round(speed_ratio, 3),
-        "scaling_factor": round(clamp(scaling_factor, 1.0, 9.0), 3),
+        "scaling_factor": round(capped_factor, 3),
         "strategy": used_strategy,
     }
 
@@ -252,12 +269,12 @@ def generate_scaled_problem(operations, scaling_factor: float, seed=None):
         add_digits = (1, 1)
         sub_digits = (1, 1)
         mul_left, mul_right = (1, 1), (1, 1)
-    elif scaling_factor < 2.5:
-        allowed_ops = ["add", "sub"] + (["mul"] if rng.random() < 0.2 else [])
+    elif scaling_factor < 2.8:
+        allowed_ops = ["add", "sub"]
         add_digits = (1, 2)
         sub_digits = (1, 2)
         mul_left, mul_right = (1, 1), (1, 1)
-    elif scaling_factor < 3.5:
+    elif scaling_factor < 3.8:
         allowed_ops = ["add", "sub", "mul"]
         add_digits = (2, 2)
         sub_digits = (2, 2)

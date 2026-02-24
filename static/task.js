@@ -8,7 +8,6 @@
   const submitField = document.getElementById('client_submit_ts');
   const rtField = document.getElementById('rt_ms');
   const visField = document.getElementById('visibility_events');
-  const statusText = document.getElementById('status-text');
 
   const correctAnswer = Number(form.dataset.correctAnswer);
   const minDelayMs = 250;
@@ -38,23 +37,19 @@
 
     const raw = answerInput.value.trim();
     if (raw.length === 0) {
-      statusText.textContent = 'Waiting for correct answer…';
       return;
     }
 
     const parsed = Number(raw);
     if (!Number.isFinite(parsed) || !Number.isInteger(parsed)) {
-      statusText.textContent = 'Enter an integer answer.';
       return;
     }
 
     if (parsed !== correctAnswer) {
-      statusText.textContent = 'Incorrect. Keep trying.';
       return;
     }
 
     submitted = true;
-    statusText.textContent = 'Correct! Loading next problem…';
 
     const submitTs = Date.now();
     submitField.value = String(submitTs);
