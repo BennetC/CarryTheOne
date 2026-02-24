@@ -190,6 +190,137 @@ def generate_problem(difficulty: str = "medium", operations=None, seed=None):
     }
 
 
+def clamp(value: float, minimum: float, maximum: float) -> float:
+    return max(minimum, min(value, maximum))
+
+
+def infer_scaling_factor(participant_id: str, strategy: str):
+    completed_trials = (
+        Trial.query.filter_by(participant_id=participant_id)
+        .filter(Trial.submitted_at.isnot(None))
+        .order_by(Trial.started_at.asc())
+        .all()
+    )
+    solved_count = len(completed_trials)
+
+    recent = completed_trials[-8:]
+    accuracy = (sum(1 for t in recent if t.is_correct) / len(recent)) if recent else 1.0
+
+    recent_rt_values = [t.rt_ms for t in recent if t.rt_ms is not None]
+    avg_recent_rt = mean(recent_rt_values) if recent_rt_values else 4500
+    speed_ratio = clamp(4500 / max(avg_recent_rt, 600), 0.0, 1.4)
+
+    timeout_penalty = sum(1 for t in recent if t.rt_ms is not None and t.rt_ms > 12000) * 0.08
+    incorrect_penalty = sum(1 for t in recent if not t.is_correct) * 0.1
+    streak_bonus = 0.15 if recent and all(t.is_correct for t in recent[-3:]) else 0.0
+
+    strategy_key = (strategy or "dynamic").lower()
+    used_strategy = strategy_key
+    if strategy_key == "random":
+        used_strategy = random.choice(["polynomial", "exponential", "dynamic"])
+
+    if used_strategy == "polynomial":
+        scaling_factor = 1 + (solved_count / 5) ** 2
+    elif used_strategy == "exponential":
+        scaling_factor = 1.05**solved_count
+    else:
+        base_factor = 1 + (solved_count / 6) ** 1.7
+        dynamic_multiplier = clamp(
+            0.7 + (accuracy * 0.9) + (speed_ratio * 0.6) + streak_bonus - timeout_penalty - incorrect_penalty,
+            0.2,
+            2.0,
+        )
+        scaling_factor = base_factor * dynamic_multiplier
+
+    return {
+        "solved_count": solved_count,
+        "accuracy_recent": round(accuracy, 3),
+        "avg_recent_rt": round(avg_recent_rt, 2),
+        "speed_ratio": round(speed_ratio, 3),
+        "scaling_factor": round(clamp(scaling_factor, 1.0, 9.0), 3),
+        "strategy": used_strategy,
+    }
+
+
+def generate_scaled_problem(operations, scaling_factor: float, seed=None):
+    operations = operations or ["add", "sub", "mul"]
+    operations = [o for o in operations if o in {"add", "sub", "mul"}] or ["add", "sub", "mul"]
+    rng = random.Random(seed) if seed is not None else random.Random()
+
+    if scaling_factor < 1.5:
+        allowed_ops = ["add", "sub"]
+        add_digits = (1, 1)
+        sub_digits = (1, 1)
+        mul_left, mul_right = (1, 1), (1, 1)
+    elif scaling_factor < 2.5:
+        allowed_ops = ["add", "sub"] + (["mul"] if rng.random() < 0.2 else [])
+        add_digits = (1, 2)
+        sub_digits = (1, 2)
+        mul_left, mul_right = (1, 1), (1, 1)
+    elif scaling_factor < 3.5:
+        allowed_ops = ["add", "sub", "mul"]
+        add_digits = (2, 2)
+        sub_digits = (2, 2)
+        mul_left, mul_right = (1, 1), (1, 2)
+    elif scaling_factor < 5.0:
+        allowed_ops = ["add", "sub", "mul"]
+        add_digits = (2, 3)
+        sub_digits = (2, 3)
+        mul_left, mul_right = (2, 2), (1, 2)
+    elif scaling_factor < 6.5:
+        allowed_ops = ["add", "sub", "mul"]
+        add_digits = (3, 3)
+        sub_digits = (3, 3)
+        mul_left, mul_right = (2, 2), (2, 2)
+    else:
+        allowed_ops = ["add", "sub", "mul"]
+        add_digits = (3, 4)
+        sub_digits = (3, 4)
+        mul_left, mul_right = (2, 3), (2, 3)
+
+    eligible_ops = [op for op in operations if op in allowed_ops]
+    if not eligible_ops:
+        eligible_ops = ["add", "sub"] if scaling_factor < 2.5 else operations
+
+    op = rng.choice(eligible_ops)
+
+    if op == "add":
+        a = pick_in_range(rng, *add_digits)
+        b = pick_in_range(rng, *add_digits)
+        expression_text = f"{a} + {b}"
+        correct_answer = a + b
+        carry_count = count_carries(a, b)
+        borrow_count = None
+    elif op == "sub":
+        x = pick_in_range(rng, *sub_digits)
+        y = pick_in_range(rng, *sub_digits)
+        a, b = max(x, y), min(x, y)
+        expression_text = f"{a} - {b}"
+        correct_answer = a - b
+        carry_count = None
+        borrow_count = count_borrows(a, b)
+    else:
+        a = pick_in_range(rng, *mul_left)
+        b = pick_in_range(rng, *mul_right)
+        expression_text = f"{a} × {b}"
+        correct_answer = a * b
+        carry_count = len(str(abs(a)))
+        borrow_count = len(str(abs(b)))
+
+    num_digits_total = len(str(abs(a))) + len(str(abs(b)))
+    return {
+        "expression_text": expression_text,
+        "op_type": op,
+        "a": a,
+        "b": b,
+        "c": None,
+        "correct_answer": correct_answer,
+        "num_digits_total": num_digits_total,
+        "carry_count": carry_count,
+        "borrow_count": borrow_count,
+    }
+
+
 def get_or_create_participant(code: str):
     code = code.strip()
     existing = Participant.query.filter_by(code=code).first()
@@ -300,10 +431,15 @@ def task():
         # Auto-advance flow: successful submissions go straight to the next problem.
         return redirect(url_for("task"))
 
-    difficulty = (request.args.get("difficulty") or "medium").lower()
     ops_param = (request.args.get("ops") or "add,sub,mul").lower().split(",")
+    scale_strategy = (request.args.get("scale_strategy") or "dynamic").lower()
     seed = request.args.get("seed")
-    problem = generate_problem(difficulty=difficulty, operations=ops_param, seed=seed)
+    scale_meta = infer_scaling_factor(participant.id, scale_strategy)
+    problem = generate_scaled_problem(
+        operations=ops_param,
+        scaling_factor=scale_meta["scaling_factor"],
+        seed=seed,
+    )
 
     trial = Trial(
         participant_id=participant.id,
@@ -316,8 +452,10 @@ def task():
     return render_template(
         "task.html",
         trial=trial,
-        difficulty=difficulty,
         ops=",".join(ops_param),
+        scale_strategy=scale_strategy,
+        scale_meta=scale_meta,
+        debug_mode=app.debug,
         seed=seed,
     )
 
