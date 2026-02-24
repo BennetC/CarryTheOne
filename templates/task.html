@@ -3,6 +3,7 @@
 {% block content %}
 <section class="card task-card">
   <p class="muted">Type the answer. When correct, you'll automatically continue.</p>
+  <p class="muted">Each solved question is saved immediately.</p>
   <div id="expression" class="expression task-expression" data-trial-id="{{ trial.id }}">{{ trial.expression_text }}</div>
 
   <form id="task-form" class="task-form" method="post" novalidate data-correct-answer="{{ trial.correct_answer }}">
@@ -18,6 +19,11 @@
     <button id="submit-btn" type="submit" hidden aria-hidden="true">Submit</button>
   </form>
   <p class="muted">Scale strategy: {{ scale_meta.strategy }} | Ops: {{ ops }}</p>
+
+  <form id="stop-form" method="post" action="{{ url_for('stop') }}">
+    <input type="hidden" name="trial_id" value="{{ trial.id }}">
+    <button type="submit" class="secondary">Stop session</button>
+  </form>
 
   {% if debug_mode %}
   <details>

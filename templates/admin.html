@@ -23,6 +23,10 @@
     <input id="start_date" name="start_date" value="{{ start_date }}" placeholder="2026-01-01T00:00:00">
     <label for="end_date">End (ISO datetime)</label>
     <input id="end_date" name="end_date" value="{{ end_date }}" placeholder="2026-12-31T23:59:59">
+    <label for="participant_code">Participant code</label>
+    <input id="participant_code" name="participant_code" value="{{ participant_code }}" placeholder="e.g., p01">
+    <label for="participant_id">Participant ID</label>
+    <input id="participant_id" name="participant_id" value="{{ participant_id }}" placeholder="UUID">
     <button type="submit">Apply Filters</button>
   </form>
 
@@ -40,8 +44,75 @@
   </ul>
 
   <p>
-    <a class="button" href="{{ url_for('export_csv', op_type=op_type, start_date=start_date, end_date=end_date) }}">Download CSV export</a>
+    <a class="button" href="{{ url_for('export_csv', op_type=op_type, start_date=start_date, end_date=end_date, participant_code=participant_code, participant_id=participant_id) }}">Download CSV export</a>
   </p>
+
+  <h3>Participants (latest 25)</h3>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Code</th>
+          <th>ID</th>
+          <th>Age</th>
+          <th>Gender</th>
+          <th>Created</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for p in participants %}
+        <tr>
+          <td>{{ p.code }}</td>
+          <td>{{ p.id }}</td>
+          <td>{{ p.age if p.age is not none else '—' }}</td>
+          <td>{{ p.gender or '—' }}</td>
+          <td>{{ p.created_at }}</td>
+          <td>
+            <a class="button" href="{{ url_for('admin_participant', participant_id=p.id) }}">View session/user</a>
+            <form method="post" action="{{ url_for('delete_participant_admin', participant_id=p.id) }}" onsubmit="return confirm('Delete this participant and all trials?');">
+              <button type="submit" class="secondary">Delete user</button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <h3>Trials (matching filters, latest 25)</h3>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Submitted</th>
+          <th>Participant</th>
+          <th>Expression</th>
+          <th>Answer</th>
+          <th>RT (ms)</th>
+          <th>Correct</th>
+          <th>Action</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for t in recent_trials %}
+        <tr>
+          <td>{{ t.submitted_at }}</td>
+          <td>{{ t.participant_id }}</td>
+          <td>{{ t.expression_text }}</td>
+          <td>{{ t.user_answer }}</td>
+          <td>{{ t.rt_ms }}</td>
+          <td>{{ t.is_correct }}</td>
+          <td>
+            <form method="post" action="{{ url_for('delete_trial_admin', trial_id=t.id) }}" onsubmit="return confirm('Delete this trial?');">
+              <button type="submit" class="secondary">Delete trial</button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
   {% endif %}
 </section>
 {% endblock %}

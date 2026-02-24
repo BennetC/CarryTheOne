@@ -86,6 +86,11 @@ button.secondary { background: #312e81; }
 .checkbox-row { display: flex; gap: .5rem; align-items: center; }
 .checkbox-row input { width: auto; margin: 0; }
 .inline-form { display: grid; gap: .4rem; }
+.table-wrap { overflow-x: auto; margin-top: .75rem; }
+table { width: 100%; border-collapse: collapse; font-size: .9rem; }
+th, td { border: 1px solid #3b3566; padding: .45rem; vertical-align: top; }
+th { color: var(--text-1); }
+td form { margin: 0; }
 
 .task-card {
   text-align: center;
