@@ -40,6 +40,10 @@ class Participant(db.Model):
     created_at = db.Column(db.DateTime, nullable=False, default=utcnow_naive)
     user_agent = db.Column(db.String(512), nullable=True)
     device_hint = db.Column(db.String(128), nullable=True)
+    age = db.Column(db.Integer, nullable=True)
+    gender = db.Column(db.String(32), nullable=True)
+    dominant_hand = db.Column(db.String(16), nullable=True)
+    math_confidence = db.Column(db.Integer, nullable=True)
 
 
 class Trial(db.Model):
@@ -338,16 +342,31 @@ def generate_scaled_problem(operations, scaling_factor: float, seed=None):
     }
 
 
-def get_or_create_participant(code: str):
+def get_or_create_participant(
+    code: str,
+    age: int | None = None,
+    gender: str | None = None,
+    dominant_hand: str | None = None,
+    math_confidence: int | None = None,
+):
     code = code.strip()
     existing = Participant.query.filter_by(code=code).first()
     if existing:
+        existing.age = age
+        existing.gender = gender
+        existing.dominant_hand = dominant_hand
+        existing.math_confidence = math_confidence
+        db.session.commit()
         return existing
 
     p = Participant(
         code=code,
         user_agent=request.headers.get("User-Agent", "")[:512],
         device_hint=detect_device_hint(request.headers.get("User-Agent", "")),
+        age=age,
+        gender=gender,
+        dominant_hand=dominant_hand,
+        math_confidence=math_confidence,
     )
     db.session.add(p)
     db.session.commit()
@@ -374,6 +393,23 @@ def parse_iso_naive(value: str):
     return parsed
 
 
+def ensure_participant_columns():
+    inspector = db.inspect(db.engine)
+    existing_columns = {col["name"] for col in inspector.get_columns("participants")}
+    migrations = {
+        "age": "INTEGER",
+        "gender": "VARCHAR(32)",
+        "dominant_hand": "VARCHAR(16)",
+        "math_confidence": "INTEGER",
+    }
+
+    for col_name, col_type in migrations.items():
+        if col_name in existing_columns:
+            continue
+        db.session.execute(db.text(f"ALTER TABLE participants ADD COLUMN {col_name} {col_type}"))
+    db.session.commit()
+
+
 @app.route("/", methods=["GET", "POST"])
 def index():
     if request.method == "POST":
@@ -381,11 +417,27 @@ def index():
             flash("You must agree to participate before starting.")
             return render_template("index.html")
 
+        age = request.form.get("age", type=int)
+        if age is not None and (age < 5 or age > 120):
+            age = None
+
+        gender = (request.form.get("gender") or "").strip()[:32] or None
+        dominant_hand = (request.form.get("dominant_hand") or "").strip()[:16] or None
+        math_confidence = request.form.get("math_confidence", type=int)
+        if math_confidence is not None and (math_confidence < 1 or math_confidence > 5):
+            math_confidence = None
+
         code = (request.form.get("code") or "").strip()
         if "generate" in request.form or not code:
             code = random_code()
 
-        participant = get_or_create_participant(code)
+        participant = get_or_create_participant(
+            code,
+            age=age,
+            gender=gender,
+            dominant_hand=dominant_hand,
+            math_confidence=math_confidence,
+        )
         session["participant_id"] = participant.id
 
         resp = make_response(redirect(url_for("task")))
@@ -475,6 +527,14 @@ def task():
         debug_mode=app.debug,
         seed=seed,
     )
+
+
+@app.route("/stop", methods=["POST"])
+def stop():
+    session.pop("participant_id", None)
+    session.pop("last_trial_id", None)
+    flash("Session ended. Your solved questions were saved as you completed them.")
+    return redirect(url_for("index"))
 
 
 @app.route("/feedback")
@@ -580,6 +640,10 @@ def export_csv():
         [
             "id",
             "participant_id",
+            "participant_age",
+            "participant_gender",
+            "participant_dominant_hand",
+            "participant_math_confidence",
             "expression_text",
             "op_type",
             "a",
@@ -603,11 +667,25 @@ def export_csv():
         ]
     )
 
+    participant_meta = {
+        p.id: p
+        for p in Participant.query.filter(
+            Participant.id.in_(
+                [pid for (pid,) in trials_query.with_entities(Trial.participant_id).distinct().all()]
+            )
+        ).all()
+    }
+
     for t in trials_query.order_by(Trial.started_at.asc()).all():
+        participant = participant_meta.get(t.participant_id)
         writer.writerow(
             [
                 t.id,
                 t.participant_id,
+                participant.age if participant else None,
+                participant.gender if participant else None,
+                participant.dominant_hand if participant else None,
+                participant.math_confidence if participant else None,
                 t.expression_text,
                 t.op_type,
                 t.a,
@@ -645,6 +723,7 @@ def init_db_command():
 
 with app.app_context():
     db.create_all()
+    ensure_participant_columns()
 
 
 if __name__ == "__main__":
