@@ -132,25 +132,107 @@ def pick_in_range(rng: random.Random, digits_min: int, digits_max: int) -> int:
     return rng.randint(low, high)
 
 
-def generate_problem(difficulty: str = "medium", operations=None, seed=None):
+def clamp(value: float, low: float, high: float) -> float:
+    return max(low, min(high, value))
+
+
+def compute_scaling_state(participant_id: str, scale_mode: str = "dynamic"):
+    submitted_trials = (
+        Trial.query.filter_by(participant_id=participant_id)
+        .filter(Trial.submitted_at.isnot(None))
+        .order_by(Trial.submitted_at.asc())
+        .all()
+    )
+
+    solved_count = len(submitted_trials)
+    n = solved_count
+
+    if scale_mode == "polynomial":
+        scaling_factor = 1 + (n**1.35) / 8
+    elif scale_mode == "exponential":
+        scaling_factor = 1.0 * (1.08**n)
+    elif scale_mode == "linear":
+        scaling_factor = 1 + (0.22 * n)
+    else:
+        base = 1 + (n**1.2) / 8
+        recent = submitted_trials[-8:]
+        if recent:
+            recent_accuracy = sum(1 for t in recent if t.is_correct) / len(recent)
+            recent_rt_values = [t.rt_ms for t in recent if t.rt_ms is not None]
+            median_recent_rt = median(recent_rt_values) if recent_rt_values else 5000
+
+            rt_component = clamp((4500 - median_recent_rt) / 3000, -1, 1)
+            accuracy_component = (recent_accuracy - 0.6) * 1.4
+            adaptive_delta = clamp(accuracy_component + rt_component, -1, 1)
+            adaptive_multiplier = clamp(1 + adaptive_delta, 0.1, 2.0)
+            scaling_factor = base * adaptive_multiplier
+        else:
+            median_recent_rt = None
+            recent_accuracy = None
+            adaptive_delta = 0
+            adaptive_multiplier = 1
+            scaling_factor = base
+
+    scaling_factor = clamp(scaling_factor, 1.0, 14.0)
+    return {
+        "mode": scale_mode,
+        "solved_count": solved_count,
+        "scaling_factor": round(scaling_factor, 4),
+    }
+
+
+def add_digits_by_scale(scale: float):
+    if scale < 1.8:
+        return (1, 1)
+    if scale < 3:
+        return (1, 2)
+    if scale < 4.5:
+        return (2, 2)
+    if scale < 6.5:
+        return (2, 3)
+    if scale < 8.5:
+        return (3, 3)
+    return (3, 4)
+
+
+def mul_digits_by_scale(scale: float):
+    # Starts with 1-digit multiplication and only ramps to larger factors over time.
+    if scale < 2.4:
+        return (1, 1), (1, 1)
+    if scale < 3.8:
+        return (1, 1), (1, 2)
+    if scale < 5.2:
+        return (2, 2), (1, 2)
+    if scale < 7:
+        return (2, 2), (2, 2)
+    if scale < 9:
+        return (2, 3), (2, 2)
+    return (3, 3), (2, 3)
+
+
+def generate_problem(difficulty: str = "medium", operations=None, seed=None, scaling_factor: float = 1.0):
     operations = operations or ["add", "sub", "mul"]
     operations = [o for o in operations if o in {"add", "sub", "mul"}] or ["add", "sub", "mul"]
 
     rng = random.Random(seed) if seed is not None else random.Random()
-    op = rng.choice(operations)
 
-    if difficulty == "easy":
-        add_digits = (1, 2)
-        sub_digits = (1, 2)
-        mul_left, mul_right = (1, 1), (1, 2)
-    elif difficulty == "hard":
-        add_digits = (3, 4)
-        sub_digits = (3, 4)
-        mul_left, mul_right = (2, 2), (3, 3)
-    else:
-        add_digits = (2, 3)
-        sub_digits = (2, 3)
-        mul_left, mul_right = (2, 2), (2, 2)
+    difficulty_weight = {
+        "easy": 0.85,
+        "medium": 1.0,
+        "hard": 1.2,
+    }.get(difficulty, 1.0)
+    effective_scale = scaling_factor * difficulty_weight
+
+    add_digits = add_digits_by_scale(effective_scale)
+    sub_digits = add_digits
+    mul_left, mul_right = mul_digits_by_scale(effective_scale)
+
+    available_ops = operations
+    if effective_scale < 1.7 and any(op in {"add", "sub"} for op in operations):
+        filtered = [op for op in operations if op in {"add", "sub"}]
+        available_ops = filtered or operations
+
+    op = rng.choice(available_ops)
 
     if op == "add":
         a = pick_in_range(rng, *add_digits)
@@ -187,6 +269,7 @@ def generate_problem(difficulty: str = "medium", operations=None, seed=None):
         "num_digits_total": num_digits_total,
         "carry_count": carry_count,
         "borrow_count": borrow_count,
+        "effective_scale": round(effective_scale, 4),
     }
 
 
@@ -302,8 +385,23 @@ def task():
 
     difficulty = (request.args.get("difficulty") or "medium").lower()
     ops_param = (request.args.get("ops") or "add,sub,mul").lower().split(",")
+    requested_scale_mode = (request.args.get("scale_mode") or "dynamic").lower()
+    if requested_scale_mode == "random":
+        scale_mode = random.choice(["linear", "polynomial", "exponential", "dynamic"])
+    else:
+        scale_mode = requested_scale_mode
+    if scale_mode not in {"linear", "polynomial", "exponential", "dynamic"}:
+        scale_mode = "dynamic"
+
     seed = request.args.get("seed")
-    problem = generate_problem(difficulty=difficulty, operations=ops_param, seed=seed)
+    scaling_state = compute_scaling_state(participant.id, scale_mode=scale_mode)
+    problem = generate_problem(
+        difficulty=difficulty,
+        operations=ops_param,
+        seed=seed,
+        scaling_factor=scaling_state["scaling_factor"],
+    )
+    effective_scale = problem.pop("effective_scale", scaling_state["scaling_factor"])
 
     trial = Trial(
         participant_id=participant.id,
@@ -313,12 +411,24 @@ def task():
     db.session.add(trial)
     db.session.commit()
 
+    debug_info = None
+    if app.debug:
+        debug_info = {
+            "requested_scale_mode": requested_scale_mode,
+            "active_scale_mode": scale_mode,
+            "solved_count": scaling_state["solved_count"],
+            "scaling_factor": scaling_state["scaling_factor"],
+            "effective_scale": effective_scale,
+        }
+
     return render_template(
         "task.html",
         trial=trial,
         difficulty=difficulty,
         ops=",".join(ops_param),
         seed=seed,
+        scale_mode=scale_mode,
+        debug_info=debug_info,
     )
 
 

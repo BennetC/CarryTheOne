@@ -18,7 +18,10 @@
     <p id="status-text" class="muted">Waiting for correct answer…</p>
     <button id="submit-btn" type="submit" hidden aria-hidden="true">Submit</button>
   </form>
-  <p class="muted">Difficulty: {{ difficulty }} | Ops: {{ ops }}</p>
+  <p class="muted">Difficulty: {{ difficulty }} | Ops: {{ ops }} | Scale mode: {{ scale_mode }}</p>
+  {% if debug_info %}
+  <pre class="muted">DEBUG {{ debug_info | tojson }}</pre>
+  {% endif %}
 </section>
 <script src="{{ url_for('static', filename='task.js') }}"></script>
 {% endblock %}
