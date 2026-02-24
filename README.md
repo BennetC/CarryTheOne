@@ -33,14 +33,21 @@ Then open `http://127.0.0.1:5000`.
 3. Complete problems at `/task` by typing answers; correct answers auto-submit and load the next problem immediately.
 
 Optional problem controls via query params on `/task`:
-- `difficulty=easy|medium|hard`
 - `ops=add,sub,mul`
+- `scale_strategy=dynamic|polynomial|exponential|random`
 - `seed=<value>` for reproducible demo generation
 
 Example:
 ```text
-/task?difficulty=hard&ops=add,mul&seed=demo1
+/task?scale_strategy=dynamic&ops=add,mul&seed=demo1
 ```
+
+Adaptive scaling notes:
+- The app now starts with simpler questions (single-digit add/subtract), then scales into larger numbers and multiplication over time.
+- `dynamic` adjusts the scaling factor from performance (recent accuracy + response times), then multiplies by a bounded dynamic multiplier between `0.2` and `2.0`.
+- `polynomial` and `exponential` provide deterministic growth alternatives.
+- `random` picks one of the three strategies per generated problem.
+- When Flask debug mode is enabled (`app.run(debug=True)`), `/task` displays a scaling debug panel with strategy and factor diagnostics.
 
 ## Admin dashboard
 - Visit `/admin` and log in with `ADMIN_PASSWORD`.
