@@ -30,7 +30,13 @@ Then open `http://127.0.0.1:5000`.
 ## Participant flow
 1. Visit `/` and consent.
 2. Enter a participant code OR click generate anonymous code.
-3. Complete problems at `/task` by typing answers; correct answers auto-submit and load the next problem immediately.
+3. Optionally add participant metadata (age, gender, dominant hand, math confidence).
+4. Complete problems at `/task` by typing answers; correct answers auto-submit and load the next problem immediately.
+5. Use **Stop session** at any time to end the current run and return to start.
+
+Data saving behavior:
+- Trials are saved live: each correct submission is committed immediately when posted.
+- Stopping a session does not delete already submitted trials.
 
 Optional problem controls via query params on `/task`:
 - `ops=add,sub,mul`
@@ -58,6 +64,7 @@ Adaptive scaling notes:
 ## CSV columns
 `/admin/export.csv` includes:
 - Trial identity: `id`, `participant_id`
+- Participant metadata: `participant_age`, `participant_gender`, `participant_dominant_hand`, `participant_math_confidence`
 - Problem fields: `expression_text`, `op_type`, `a`, `b`, `c`, `correct_answer`
 - Response fields: `user_answer`, `is_correct`, `rt_ms`, `server_duration_ms`
 - Timestamps: `started_at`, `submitted_at`, `client_start_ts`, `client_submit_ts`

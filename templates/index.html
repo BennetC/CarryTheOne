@@ -12,6 +12,32 @@
     <label for="code">Participant nickname/code</label>
     <input id="code" name="code" type="text" maxlength="64" value="{{ existing_code or '' }}" placeholder="e.g., p01 or leave blank">
 
+    <details>
+      <summary>Optional participant info (helps with speed analysis)</summary>
+      <label for="age">Age</label>
+      <input id="age" name="age" type="number" min="5" max="120" placeholder="e.g., 28">
+
+      <label for="gender">Gender</label>
+      <select id="gender" name="gender">
+        <option value="">Prefer not to say</option>
+        <option value="female">Female</option>
+        <option value="male">Male</option>
+        <option value="non-binary">Non-binary</option>
+        <option value="self-described">Self-described</option>
+      </select>
+
+      <label for="dominant_hand">Dominant hand</label>
+      <select id="dominant_hand" name="dominant_hand">
+        <option value="">Prefer not to say</option>
+        <option value="right">Right</option>
+        <option value="left">Left</option>
+        <option value="ambidextrous">Ambidextrous</option>
+      </select>
+
+      <label for="math_confidence">Math confidence (1-5)</label>
+      <input id="math_confidence" name="math_confidence" type="number" min="1" max="5" placeholder="1 = low, 5 = high">
+    </details>
+
     <div class="button-row">
       <button type="submit" name="start" value="1">Start with this code</button>
       <button type="submit" name="generate" value="1" class="secondary">Generate anonymous code</button>
