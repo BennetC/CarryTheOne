@@ -18,7 +18,21 @@
     <p id="status-text" class="muted">Waiting for correct answer…</p>
     <button id="submit-btn" type="submit" hidden aria-hidden="true">Submit</button>
   </form>
-  <p class="muted">Difficulty: {{ difficulty }} | Ops: {{ ops }}</p>
+  <p class="muted">Scale strategy: {{ scale_meta.strategy }} | Ops: {{ ops }}</p>
+
+  {% if debug_mode %}
+  <details>
+    <summary>Debug: scaling</summary>
+    <ul class="muted">
+      <li>strategy: {{ scale_meta.strategy }}</li>
+      <li>solved_count: {{ scale_meta.solved_count }}</li>
+      <li>accuracy_recent: {{ scale_meta.accuracy_recent }}</li>
+      <li>avg_recent_rt: {{ scale_meta.avg_recent_rt }}</li>
+      <li>speed_ratio: {{ scale_meta.speed_ratio }}</li>
+      <li>scaling_factor: {{ scale_meta.scaling_factor }}</li>
+    </ul>
+  </details>
+  {% endif %}
 </section>
 <script src="{{ url_for('static', filename='task.js') }}"></script>
 {% endblock %}
